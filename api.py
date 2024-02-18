@@ -110,6 +110,8 @@ now_dir = os.getcwd()
 sys.path.append(now_dir)
 sys.path.append("%s/GPT_SoVITS" % (now_dir))
 
+from pathlib import Path
+
 import signal
 from time import time as ttime
 import torch
@@ -134,25 +136,65 @@ g_config = global_config.Config()
 
 # AVAILABLE_COMPUTE = "cuda" if torch.cuda.is_available() else "cpu"
 
-parser = argparse.ArgumentParser(description="GPT-SoVITS api")
+parser = argparse.ArgumentParser(description="GPT-SoVITS API")
 
-parser.add_argument("-s", "--sovits_path", type=str, default=g_config.sovits_path, help="SoVITS模型路径")
-parser.add_argument("-g", "--gpt_path", type=str, default=g_config.gpt_path, help="GPT模型路径")
+parser.add_argument(
+    "-s", "--sovits_path", type=str, default=g_config.sovits_path, help="SoVITS模型路径"
+)
+parser.add_argument(
+    "-g", "--gpt_path", type=str, default=g_config.gpt_path, help="GPT模型路径"
+)
 
-parser.add_argument("-dr", "--default_refer_path", type=str, default="", help="默认参考音频路径")
-parser.add_argument("-dt", "--default_refer_text", type=str, default="", help="默认参考音频文本")
-parser.add_argument("-dl", "--default_refer_language", type=str, default="", help="默认参考音频语种")
+parser.add_argument(
+    "-dr", "--default_refer_path", type=str, default="", help="默认参考音频路径"
+)
+parser.add_argument(
+    "-dt", "--default_refer_text", type=str, default="", help="默认参考音频文本"
+)
+parser.add_argument(
+    "-dl", "--default_refer_language", type=str, default="", help="默认参考音频语种"
+)
 
-parser.add_argument("-d", "--device", type=str, default=g_config.infer_device, help="cuda / cpu / mps")
-parser.add_argument("-a", "--bind_addr", type=str, default="127.0.0.1", help="default: 127.0.0.1")
-parser.add_argument("-p", "--port", type=int, default=g_config.api_port, help="default: 9880")
-parser.add_argument("-fp", "--full_precision", action="store_true", default=False, help="覆盖config.is_half为False, 使用全精度")
-parser.add_argument("-hp", "--half_precision", action="store_true", default=False, help="覆盖config.is_half为True, 使用半精度")
+parser.add_argument(
+    "-d", "--device", type=str, default=g_config.infer_device, help="cuda / cpu / mps"
+)
+parser.add_argument(
+    "-a", "--bind_addr", type=str, default="127.0.0.1", help="default: 127.0.0.1"
+)
+parser.add_argument(
+    "-p", "--port", type=int, default=g_config.api_port, help="default: 9880"
+)
+parser.add_argument(
+    "-fp",
+    "--full_precision",
+    action="store_true",
+    default=False,
+    help="覆盖config.is_half为False, 使用全精度",
+)
+parser.add_argument(
+    "-hp",
+    "--half_precision",
+    action="store_true",
+    default=False,
+    help="覆盖config.is_half为True, 使用半精度",
+)
 # bool值的用法为 `python ./api.py -fp ...`
 # 此时 full_precision==True, half_precision==False
 
-parser.add_argument("-hb", "--hubert_path", type=str, default=g_config.cnhubert_path, help="覆盖config.cnhubert_path")
-parser.add_argument("-b", "--bert_path", type=str, default=g_config.bert_path, help="覆盖config.bert_path")
+parser.add_argument(
+    "-hb",
+    "--hubert_path",
+    type=str,
+    default=g_config.cnhubert_path,
+    help="覆盖config.cnhubert_path",
+)
+parser.add_argument(
+    "-b",
+    "--bert_path",
+    type=str,
+    default=g_config.bert_path,
+    help="覆盖config.bert_path",
+)
 
 args = parser.parse_args()
 
@@ -170,7 +212,9 @@ class DefaultRefer:
         return is_full(self.path, self.text, self.language)
 
 
-default_refer = DefaultRefer(args.default_refer_path, args.default_refer_text, args.default_refer_language)
+default_refer = DefaultRefer(
+    args.default_refer_path, args.default_refer_text, args.default_refer_language
+)
 
 device = args.device
 port = args.port
@@ -232,7 +276,9 @@ def get_bert_feature(text, word2ph):
     with torch.no_grad():
         inputs = tokenizer(text, return_tensors="pt")
         for i in inputs:
-            inputs[i] = inputs[i].to(device)  #####输入是long不用管精度问题，精度随bert_model
+            inputs[i] = inputs[i].to(
+                device
+            )  #####输入是long不用管精度问题，精度随bert_model
         res = bert_model(**inputs, output_hidden_states=True)
         res = torch.cat(res["hidden_states"][-3:-2], -1)[0].cpu()[1:-1]
     assert len(word2ph) == len(text)
@@ -274,7 +320,8 @@ vq_model = SynthesizerTrn(
     hps.data.filter_length // 2 + 1,
     hps.train.segment_size // hps.data.hop_length,
     n_speakers=hps.data.n_speakers,
-    **hps.model)
+    **hps.model,
+)
 if is_half:
     vq_model = vq_model.half().to(device)
 else:
@@ -282,7 +329,7 @@ else:
 vq_model.eval()
 print(vq_model.load_state_dict(dict_s2["weight"], strict=False))
 hz = 50
-max_sec = config['data']['max_sec']
+max_sec = config["data"]["max_sec"]
 t2s_model = Text2SemanticLightningModule(config, "****", is_train=False)
 t2s_model.load_state_dict(dict_s1["weight"])
 if is_half:
@@ -298,8 +345,14 @@ def get_spepc(hps, filename):
     audio = torch.FloatTensor(audio)
     audio_norm = audio
     audio_norm = audio_norm.unsqueeze(0)
-    spec = spectrogram_torch(audio_norm, hps.data.filter_length, hps.data.sampling_rate, hps.data.hop_length,
-                             hps.data.win_length, center=False)
+    spec = spectrogram_torch(
+        audio_norm,
+        hps.data.filter_length,
+        hps.data.sampling_rate,
+        hps.data.hop_length,
+        hps.data.win_length,
+        center=False,
+    )
     return spec
 
 
@@ -312,7 +365,7 @@ dict_language = {
     "JA": "ja",
     "zh": "zh",
     "en": "en",
-    "ja": "ja"
+    "ja": "ja",
 }
 
 
@@ -320,19 +373,24 @@ def get_tts_wav(ref_wav_path, prompt_text, prompt_language, text, text_language)
     t0 = ttime()
     prompt_text = prompt_text.strip("\n")
     prompt_language, text = prompt_language, text.strip("\n")
-    zero_wav = np.zeros(int(hps.data.sampling_rate * 0.3), dtype=np.float16 if is_half == True else np.float32)
+    zero_wav = np.zeros(
+        int(hps.data.sampling_rate * 0.3),
+        dtype=np.float16 if is_half == True else np.float32,
+    )
     with torch.no_grad():
         wav16k, sr = librosa.load(ref_wav_path, sr=16000)
         wav16k = torch.from_numpy(wav16k)
         zero_wav_torch = torch.from_numpy(zero_wav)
-        if (is_half == True):
+        if is_half == True:
             wav16k = wav16k.half().to(device)
             zero_wav_torch = zero_wav_torch.half().to(device)
         else:
             wav16k = wav16k.to(device)
             zero_wav_torch = zero_wav_torch.to(device)
         wav16k = torch.cat([wav16k, zero_wav_torch])
-        ssl_content = ssl_model.model(wav16k.unsqueeze(0))["last_hidden_state"].transpose(1, 2)  # .float()
+        ssl_content = ssl_model.model(wav16k.unsqueeze(0))[
+            "last_hidden_state"
+        ].transpose(1, 2)  # .float()
         codes = vq_model.extract_latent(ssl_content)
         prompt_semantic = codes[0, 0]
     t1 = ttime()
@@ -346,12 +404,14 @@ def get_tts_wav(ref_wav_path, prompt_text, prompt_language, text, text_language)
     for text in texts:
         phones2, word2ph2, norm_text2 = clean_text(text, text_language)
         phones2 = cleaned_text_to_sequence(phones2)
-        if (prompt_language == "zh"):
+        if prompt_language == "zh":
             bert1 = get_bert_feature(norm_text1, word2ph1).to(device)
         else:
-            bert1 = torch.zeros((1024, len(phones1)), dtype=torch.float16 if is_half == True else torch.float32).to(
-                device)
-        if (text_language == "zh"):
+            bert1 = torch.zeros(
+                (1024, len(phones1)),
+                dtype=torch.float16 if is_half == True else torch.float32,
+            ).to(device)
+        if text_language == "zh":
             bert2 = get_bert_feature(norm_text2, word2ph2).to(device)
         else:
             bert2 = torch.zeros((1024, len(phones2))).to(bert1)
@@ -370,26 +430,36 @@ def get_tts_wav(ref_wav_path, prompt_text, prompt_language, text, text_language)
                 prompt,
                 bert,
                 # prompt_phone_len=ph_offset,
-                top_k=config['inference']['top_k'],
-                early_stop_num=hz * max_sec)
+                top_k=config["inference"]["top_k"],
+                early_stop_num=hz * max_sec,
+            )
         t3 = ttime()
         # print(pred_semantic.shape,idx)
-        pred_semantic = pred_semantic[:, -idx:].unsqueeze(0)  # .unsqueeze(0)#mq要多unsqueeze一次
+        pred_semantic = pred_semantic[:, -idx:].unsqueeze(
+            0
+        )  # .unsqueeze(0)#mq要多unsqueeze一次
         refer = get_spepc(hps, ref_wav_path)  # .to(device)
-        if (is_half == True):
+        if is_half == True:
             refer = refer.half().to(device)
         else:
             refer = refer.to(device)
         # audio = vq_model.decode(pred_semantic, all_phoneme_ids, refer).detach().cpu().numpy()[0, 0]
-        audio = \
-            vq_model.decode(pred_semantic, torch.LongTensor(phones2).to(device).unsqueeze(0),
-                            refer).detach().cpu().numpy()[
-                0, 0]  ###试试重建不带上prompt部分
+        audio = (
+            vq_model.decode(
+                pred_semantic, torch.LongTensor(phones2).to(device).unsqueeze(0), refer
+            )
+            .detach()
+            .cpu()
+            .numpy()[0, 0]
+        )  ###试试重建不带上prompt部分
         audio_opt.append(audio)
         audio_opt.append(zero_wav)
         t4 = ttime()
     print("%.3f\t%.3f\t%.3f\t%.3f" % (t1 - t0, t2 - t1, t3 - t2, t4 - t3))
-    yield hps.data.sampling_rate, (np.concatenate(audio_opt, 0) * 32768).astype(np.int16)
+    yield (
+        hps.data.sampling_rate,
+        (np.concatenate(audio_opt, 0) * 32768).astype(np.int16),
+    )
 
 
 def handle_control(command):
@@ -402,7 +472,13 @@ def handle_control(command):
 
 def handle_change(path, text, language):
     if is_empty(path, text, language):
-        return JSONResponse({"code": 400, "message": '缺少任意一项以下参数: "path", "text", "language"'}, status_code=400)
+        return JSONResponse(
+            {
+                "code": 400,
+                "message": '缺少任意一项以下参数: "path", "text", "language"',
+            },
+            status_code=400,
+        )
 
     if path != "" or path is not None:
         default_refer.path = path
@@ -421,9 +497,12 @@ def handle_change(path, text, language):
 
 def handle(refer_wav_path, prompt_text, prompt_language, text, text_language):
     if (
-            refer_wav_path == "" or refer_wav_path is None
-            or prompt_text == "" or prompt_text is None
-            or prompt_language == "" or prompt_language is None
+        refer_wav_path == ""
+        or refer_wav_path is None
+        or prompt_text == ""
+        or prompt_text is None
+        or prompt_language == ""
+        or prompt_language is None
     ):
         refer_wav_path, prompt_text, prompt_language = (
             default_refer.path,
@@ -431,7 +510,12 @@ def handle(refer_wav_path, prompt_text, prompt_language, text, text_language):
             default_refer.language,
         )
         if not default_refer.is_ready():
-            return JSONResponse({"code": 400, "message": "未指定参考音频且接口无预设"}, status_code=400)
+            return JSONResponse(
+                {"code": 400, "message": "未指定参考音频且接口无预设"}, status_code=400
+            )
+
+    # hard code: replace text file path to prompt text data
+    prompt_text = Path(prompt_text).read_text(encoding="utf-8")
 
     with torch.no_grad():
         gen = get_tts_wav(
@@ -445,7 +529,7 @@ def handle(refer_wav_path, prompt_text, prompt_language, text, text_language):
 
     torch.cuda.empty_cache()
     if device == "mps":
-        print('executed torch.mps.empty_cache()')
+        print("executed torch.mps.empty_cache()")
         torch.mps.empty_cache()
     return StreamingResponse(wav, media_type="audio/wav")
 
@@ -470,15 +554,13 @@ async def change_refer(request: Request):
     return handle_change(
         json_post_raw.get("refer_wav_path"),
         json_post_raw.get("prompt_text"),
-        json_post_raw.get("prompt_language")
+        json_post_raw.get("prompt_language"),
     )
 
 
 @app.get("/change_refer")
 async def change_refer(
-        refer_wav_path: str = None,
-        prompt_text: str = None,
-        prompt_language: str = None
+    refer_wav_path: str = None, prompt_text: str = None, prompt_language: str = None
 ):
     return handle_change(refer_wav_path, prompt_text, prompt_language)
 
@@ -497,11 +579,11 @@ async def tts_endpoint(request: Request):
 
 @app.get("/")
 async def tts_endpoint(
-        refer_wav_path: str = None,
-        prompt_text: str = None,
-        prompt_language: str = None,
-        text: str = None,
-        text_language: str = None,
+    refer_wav_path: str = None,
+    prompt_text: str = None,
+    prompt_language: str = None,
+    text: str = None,
+    text_language: str = None,
 ):
     return handle(refer_wav_path, prompt_text, prompt_language, text, text_language)
 
