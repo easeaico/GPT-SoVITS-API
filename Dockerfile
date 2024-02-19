@@ -23,9 +23,6 @@ RUN apt-get update && \
 WORKDIR /workspace
 COPY . /workspace
 
-# Install python packages
-RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && pip install --no-cache-dir -r requirements.txt
-
 # Download nltk realted
 RUN python -m nltk.downloader averaged_perceptron_tagger
 RUN python -m nltk.downloader cmudict
