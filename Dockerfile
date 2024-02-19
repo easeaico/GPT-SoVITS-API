@@ -23,6 +23,9 @@ RUN apt-get update && \
 WORKDIR /workspace
 COPY . /workspace
 
+# install python packages
+RUN pip install -r requirements.txt
+
 # Download nltk realted
 RUN python -m nltk.downloader averaged_perceptron_tagger
 RUN python -m nltk.downloader cmudict
